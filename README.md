@@ -10,7 +10,7 @@
 
 inSTAnt Map was built to streamline the everyday file management that comes with single particle analysis (SPA) and subtomogram averaging (STA) workflows. Instead of manually navigating to the output directory every time a new iteration finishes, inSTAnt Map watches the directory and keeps the file list up to date automatically. 
 
-####Update Version 1.0.1: RELION Job History Tab
+#### Update Version 1.0.1: RELION Job History Tab
 
 To know, in case you are using RELION, which jobs have been running bevor your job you are running/analyzing, this new tab allows you to get the job history of a selected job in your RELION processing dir.
 
