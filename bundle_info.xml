@@ -6,28 +6,41 @@ will be displayed without the ChimeraX- prefix.
 -->
 
 <BundleInfo name="ChimeraX-InstantMap"
-    version="1.0.1"
+    version="1.1.0"
     package="chimerax.instant_map"
     minSessionVersion="1" maxSessionVersion="1">
 
   <Author>Lukas W. Bauer (AI-assisted development by Claude, Anthropic)</Author>
   <Email>luki.bauer94@gmail.com</Email>
   <URL>https://github.com/LUKASinScience/ChimeraX-InstantMap</URL>
-  <Synopsis>Auto-refreshing MRC/MAP file browser for Cryo-EM SPA and Cryo-ET STA workflows.</Synopsis>
-  <Description>A tool for browsing a directory for .mrc and .map files with automatic refresh. Built by Lukas W. Bauer with Claude (Anthropic) as AI copilot.</Description>
+  <Synopsis>Auto-refreshing MRC/MAP/CryoSPARC file browser for Cryo-EM SPA and Cryo-ET STA workflows.</Synopsis>
+  <Description>A tool for browsing a directory for .mrc and .map files with automatic refresh, including a dedicated browser for CryoSPARC project/job output directories (volumes, half-maps, masks, .bild files) and a RELION Job History tab with per-job state/artifact detection. Built by Lukas W. Bauer with Claude (Anthropic) as AI copilot.</Description>
+  <License>MIT</License>
 
   <Categories>
     <Category name="Volume Data"/>
   </Categories>
 
+  <DataFiles>
+    <DataDir>icons</DataDir>
+  </DataFiles>
+
   <Dependencies>
     <Dependency name="ChimeraX-Core" version=">=1.0"/>
     <Dependency name="ChimeraX-UI" version=">=1.0"/>
     <Dependency name="ChimeraX-Map" version=">=1.0"/>
+    <Dependency name="paramiko" version=">=2.7"/>
   </Dependencies>
 
+  <Providers manager="toolbar">
+    <Provider tab="Map" section="EM" name="InstantMap"
+      icon="instant_map.png" display_name="InstantMap"
+      description="Browse and open Cryo-EM maps"/>
+  </Providers>
+
   <Classifiers>
-    <ChimeraXClassifier>ChimeraX :: Tool :: inSTAnt Map :: Volume Data :: Browse and open MRC files</ChimeraXClassifier>
+    <PythonClassifier>License :: OSI Approved :: MIT License</PythonClassifier>
+    <ChimeraXClassifier>ChimeraX :: Tool :: InstantMap :: Volume Data :: Browse and open MRC files</ChimeraXClassifier>
   </Classifiers>
 
 </BundleInfo>

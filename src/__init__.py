@@ -7,7 +7,7 @@ class _InstantMapAPI(BundleAPI):
 
     @staticmethod
     def start_tool(session, bi, ti):
-        if ti.name == "inSTAnt Map":
+        if ti.name == "InstantMap":
             from .tool import InstantMapTool
             return InstantMapTool(session, ti.name)
 
@@ -16,6 +16,12 @@ class _InstantMapAPI(BundleAPI):
         if class_name == "InstantMapTool":
             from .tool import InstantMapTool
             return InstantMapTool
+
+    @staticmethod
+    def run_provider(session, name, mgr, **kw):
+        """Show the InstantMap tool when its EM-tab toolbar button is clicked."""
+        from chimerax.core.commands import run
+        run(session, 'ui tool show "InstantMap"')
 
 
 bundle_api = _InstantMapAPI()
