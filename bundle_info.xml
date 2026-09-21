@@ -6,7 +6,7 @@ will be displayed without the ChimeraX- prefix.
 -->
 
 <BundleInfo name="ChimeraX-InstantMap"
-    version="1.1.0"
+    version="1.2.0"
     package="chimerax.instant_map"
     minSessionVersion="1" maxSessionVersion="1">
 
@@ -41,6 +41,9 @@ will be displayed without the ChimeraX- prefix.
   <Classifiers>
     <PythonClassifier>License :: OSI Approved :: MIT License</PythonClassifier>
     <ChimeraXClassifier>ChimeraX :: Tool :: InstantMap :: Volume Data :: Browse and open MRC files</ChimeraXClassifier>
+    <ChimeraXClassifier>ChimeraX :: Command :: instantmap tree :: Volume Data :: Build a RELION job lineage tree from the command line</ChimeraXClassifier>
+    <ChimeraXClassifier>ChimeraX :: Command :: instantmap table :: Volume Data :: Build a RELION job lineage table (CSV/Markdown) from the command line</ChimeraXClassifier>
+    <ChimeraXClassifier>ChimeraX :: Command :: instantmap methods :: Volume Data :: Draft a methods-section paragraph from a RELION job lineage</ChimeraXClassifier>
   </Classifiers>
 
 </BundleInfo>

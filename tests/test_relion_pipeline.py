@@ -1,8 +1,10 @@
 from relion_pipeline import (
     build_parents,
     layers,
+    limit_hops,
     load_pipeline,
     parse_pipeline_star,
+    sort_by_job_number,
     upstream,
 )
 
@@ -95,3 +97,58 @@ def test_upstream_and_layers_give_chronological_lineage(tmp_path):
         "Class3D/job004",
         "Refine3D/job005",
     ]
+
+
+def test_sort_by_job_number_ascending():
+    jobs = ["Refine3D/job005", "Import/job001", "Class3D/job004"]
+    assert sort_by_job_number(jobs) == [
+        "Import/job001", "Class3D/job004", "Refine3D/job005",
+    ]
+
+
+def test_sort_by_job_number_reverse_is_most_recent_first():
+    jobs = ["Import/job001", "PostProcess/job006", "CtfFind/job002"]
+    assert sort_by_job_number(jobs, reverse=True) == [
+        "PostProcess/job006", "CtfFind/job002", "Import/job001",
+    ]
+
+
+def test_sort_by_job_number_ignores_family_uses_global_number():
+    # RELION numbers jobs globally, not per-family -- a job003 in one family
+    # is "more recent" than a job001 in a totally different family.
+    jobs = ["Class2D/job003", "Import/job001"]
+    assert sort_by_job_number(jobs, reverse=True)[0] == "Class2D/job003"
+
+
+def test_limit_hops_zero_or_none_is_unbounded():
+    parents = {"C": {"B"}, "B": {"A"}, "A": set()}
+    assert limit_hops("C", parents, 0) == upstream("C", parents)
+    assert limit_hops("C", parents, None) == upstream("C", parents)
+
+
+def test_limit_hops_bounds_to_n_upstream_steps():
+    # A -> B -> C -> D -> E  (A is the root, E is selected)
+    parents = {"E": {"D"}, "D": {"C"}, "C": {"B"}, "B": {"A"}, "A": set()}
+    keep, sub = limit_hops("E", parents, 2)
+    assert keep == {"E", "D", "C"}
+    assert sub == {"E": {"D"}, "D": {"C"}, "C": set()}
+
+
+def test_limit_hops_stops_early_at_the_root():
+    parents = {"B": {"A"}, "A": set()}
+    keep, sub = limit_hops("B", parents, 10)
+    assert keep == {"A", "B"}
+    assert sub == {"B": {"A"}, "A": set()}
+
+
+def test_limit_hops_handles_a_branch_point_within_range():
+    # Refine3D depends on both a Select job and a MaskCreate job
+    parents = {
+        "Refine3D": {"Select", "MaskCreate"},
+        "Select": {"Class3D"},
+        "MaskCreate": set(),
+        "Class3D": set(),
+    }
+    keep, sub = limit_hops("Refine3D", parents, 1)
+    assert keep == {"Refine3D", "Select", "MaskCreate"}
+    assert sub["Refine3D"] == {"Select", "MaskCreate"}

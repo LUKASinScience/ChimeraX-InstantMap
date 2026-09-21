@@ -1,5 +1,8 @@
 # InstantMap
 
+![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
+![ChimeraX](https://img.shields.io/badge/ChimeraX-plugin-orange)
+
 **Tired of manually refreshing your classification or refinement directories in ChimeraX? InstantMap automatically monitors a directory for new MRC/MAP files and keeps the list up to date — so the latest iteration map is always one click away. Built for Cryo-EM SPA and Cryo-ET STA workflows.**
 
 
@@ -9,6 +12,14 @@
 ## Overview
 
 InstantMap was built to streamline the everyday file management that comes with single particle analysis (SPA) and subtomogram averaging (STA) workflows. Instead of manually navigating to the output directory every time a new iteration finishes, InstantMap watches the directory and keeps the file list up to date automatically. 
+
+**Full walkthrough with screenshots: [GUIDE.md](GUIDE.md)** or the hosted guide at
+**[lukasinscience.github.io/ChimeraX-InstantMap](https://lukasinscience.github.io/ChimeraX-InstantMap/)**
+(includes step-by-step SSH cluster setup and command-line usage).
+
+See also **[reliontree](https://github.com/LUKASinScience/reliontree)** (guide:
+[lukasinscience.github.io/reliontree](https://lukasinscience.github.io/reliontree/)), a companion tool
+for RELION job-lineage visualization.
 
 #### Version 1.1.0: Initial Public Release
 
@@ -55,11 +66,12 @@ InstantMap browses Map, Mask, CryoSPARC, and RELION-project directories (local o
 
 ### RELION History Tab
 - Select a RELION project directory — reads `default_pipeline.star` automatically
-- Choose a job family (e.g. `Refine3D`) and a specific job from dropdowns
+- **Job picker**: a single filterable, newest-first list of every job in the project (RELION numbers jobs globally, so this is a true recency order) — type to filter, click a row to load its history. The newest job auto-loads with zero clicks when you set the directory. **Browse Project Tree** opens the same tree diagram over the whole project — click a job card to select it instead
 - Displays the complete **upstream job lineage** in chronological order: job number, job type (color-coded), parent job(s)
 - Each job is tagged with its **state** (`succeeded`/`running`/`failed`/`aborted`/`unknown`, detected from RELION's own `RELION_JOB_EXIT_*` sentinel files) and its **output artifacts** (`[postprocess]`/`[map]`, `[half-maps]`, `[mask]`), detected from RELION's standard output filename conventions
 - Select a job in the list and click **Open Job Map** (postprocess map if present, else the latest refine/class map) or **Open Half Maps** to load its outputs directly in ChimeraX
 - Useful for tracing which classification or selection led to a given refinement
+- **Job Tree diagram**: click **Show Job Tree** for a popup top-to-bottom card diagram of the lineage (CryoSPARC-tree-view-style, rounded cards, orthogonal connector lines, resolution/particle-count caption per job) — every job with a map is included by default (a Class3D job with several classes shows them all as a thumbnail grid), with checkboxes plus Select All/None to opt jobs out, and a "Local view: N hops" limit for large lineages. Masks render as a mesh at an explicit level of 0.5; if a later job (e.g. RELION's "Select classes") only carried one class forward, that specific class gets a dashed border in the grid. **"Adjust map levels manually"** (on by default) shows a live preview and a slider to set each map's contour level (remembered per map file) before its thumbnail is captured. **Browse Project Tree** highlights the currently-loaded job's ancestry chain among the full project graph. **Copy Methods Draft…** assembles an editable per-job text draft from each job's own parameters and stats. Exportable as PNG/PDF/SVG (vector formats stay editable in Illustrator/Inkscape); **Export Table…** (History sub-tab) writes the lineage as CSV/Markdown
 
 ### General
 - Opens at a comfortable size (≥800px tall) and each tab scrolls independently if its content doesn't fit — the panel can still be resized smaller at any time
@@ -118,9 +130,9 @@ toolshed install /path/to/ChimeraX_InstantMap-<version>-py3-none-any.whl
 
 ### RELION History
 1. Switch to the **RELION History** tab
-2. Browse to or paste the RELION project root (the folder containing `default_pipeline.star`)
-3. Select a job family and job from the dropdowns
-4. Click **Load history** — the upstream lineage appears in chronological order, each entry tagged with its state and available output artifacts
+2. Browse to or paste the RELION project root (the folder containing `default_pipeline.star`) — the newest job's history loads automatically
+3. Type in the filter box to narrow the job list, or click any job to load its history instead — or click **Browse Project Tree** to pick a job from the full project tree
+4. The upstream lineage appears in chronological order, each entry tagged with its state and available output artifacts
 5. Click a job in the list, then **Open Job Map** or **Open Half Maps** to load its outputs directly
 
 ### Connecting to a cluster over SSH
@@ -201,6 +213,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the version history.
   - CryoSPARC job status/badges backed by `job.json` once its schema can be confirmed against real project output (still undocumented and not always present as of this writing — [CryoSPARC Guide](https://guide.cryosparc.com/) has no spec for it — so intentionally left as a filename heuristic).
   - Optionally backing the CryoSPARC tab with [`cryosparc-tools`](https://github.com/cryoem-uoft/cryosparc-tools) — Structura Biotechnology's own official Python API for CryoSPARC (PyPI, source-available) — instead of/alongside filesystem reads. Would give real job type/status/parameters instead of filename guessing, but needs a live connection (host/port/API credentials) to the CryoSPARC master, which not every cluster setup exposes to the client machine — a bigger, separate feature, not started.
   - SSH tab hardening: an in-app "trust this new host" prompt (showing the key fingerprint) as an alternative to requiring a manual `ssh` once from a terminal — common UX pattern in other SSH-capable tools, would need its own care to avoid weakening the current TOFU-via-`known_hosts` model.
+  - Job Tree: a "local"/sub-tree view showing only jobs within *n* hops of a selection, filter-by-connectivity (show only a job and its direct parents/children), and click-to-highlight-lineage — all real, still-unresolved feature requests from CryoSPARC's own forum for their tree view, relevant to InstantMap's once trees get large.
 
 ## Before Publishing to the Toolshed
 

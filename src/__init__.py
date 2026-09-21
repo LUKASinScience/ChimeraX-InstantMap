@@ -23,5 +23,10 @@ class _InstantMapAPI(BundleAPI):
         from chimerax.core.commands import run
         run(session, 'ui tool show "InstantMap"')
 
+    @staticmethod
+    def register_command(bi, ci, logger):
+        from .relion_command import register_command
+        register_command(logger)
+
 
 bundle_api = _InstantMapAPI()

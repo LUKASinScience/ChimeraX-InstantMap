@@ -181,7 +181,11 @@ class SSHBrowserPanel(QWidget):
         self.tree.itemDoubleClicked.connect(self._on_item_double_click)
         self.tree.setAlternatingRowColors(True)
         self.tree.setRootIsDecorated(True)
-        self.tree.setFixedHeight(220)
+        # Minimum, not fixed: lets the panel actually shrink when the user
+        # wants it compact (an empty tree otherwise still stubbornly
+        # reserves the full height), while still growing to use whatever
+        # room is available once there's real content to browse.
+        self.tree.setMinimumHeight(120)
 
         self.status_label = QLabel("Not connected.")
         self.status_label.setStyleSheet("color: grey; font-style: italic;")

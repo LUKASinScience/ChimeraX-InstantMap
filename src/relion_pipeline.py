@@ -113,14 +113,48 @@ def upstream(selected, parents):
     return keep, sub
 
 
+def limit_hops(selected, parents, max_hops):
+    """A bounded version of `upstream()` — keep only jobs within
+    `max_hops` upstream steps of `selected` (inclusive), for a "local
+    view" of a large lineage. `max_hops` of `None` or <= 0 means
+    unlimited, i.e. identical to `upstream(selected, parents)`."""
+    if not max_hops or max_hops <= 0:
+        return upstream(selected, parents)
+    keep = {selected}
+    frontier = {selected}
+    for _ in range(max_hops):
+        next_frontier = set()
+        for u in frontier:
+            for p in parents.get(u, ()):
+                if p not in keep:
+                    keep.add(p)
+                    next_frontier.add(p)
+        frontier = next_frontier
+        if not frontier:
+            break
+    sub = {k: {p for p in v if p in keep}
+           for k, v in parents.items() if k in keep}
+    return keep, sub
+
+
+_JOB_NUM_RE = re.compile(r"job(\d+)$")
+
+
+def job_num(j):
+    m = _JOB_NUM_RE.search(j)
+    return int(m.group(1)) if m else 10 ** 9
+
+
+def sort_by_job_number(jobs, reverse=False):
+    """Sort job ids (e.g. "Class3D/job003") by their numeric suffix. RELION
+    numbers jobs globally across the whole project (not per-family), so this
+    is a correct "most recent first" ordering with `reverse=True` — no
+    filesystem-mtime guessing needed."""
+    return sorted(jobs, key=lambda j: (job_num(j), j), reverse=reverse)
+
+
 def layers(selected, parents):
     """Assign BFS depth to each job → chronological layers root→selected."""
-    job_num_re = re.compile(r"job(\d+)$")
-
-    def job_num(j):
-        m = job_num_re.search(j)
-        return int(m.group(1)) if m else 10 ** 9
-
     memo = {}
 
     def depth(u):

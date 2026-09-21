@@ -24,3 +24,13 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Local-only Toolshed submission staging (never pushed to GitHub)
+TOOLSHED_README.md
+CLAUDE_shared.md
+TOOLSHED.md
+
+# Zensical docs (local preview only; site/ is deployed via GitHub Actions, not committed)
+.venv/
+venv/
+site/
