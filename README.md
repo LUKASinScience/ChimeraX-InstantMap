@@ -204,25 +204,6 @@ See [CHANGELOG.md](CHANGELOG.md) for the version history.
 
 ---
 
-## Roadmap / Backlog
-
-- **Done (1.1.0, initial release):** RELION/Mask/CryoSPARC browsers with auto-refresh; RELION job-history/lineage with state+artifact badges; SSH/SFTP browsing of a remote RELION/CryoSPARC project (key-based auth, download-and-open or browse-only); session save/restore; background-threaded directory scanning so slow/network mounts don't freeze the UI; a `pytest` test suite; one-click InstantMap button with a transparent-background icon in a new EM section of ChimeraX's Map toolbar tab — see [CHANGELOG.md](CHANGELOG.md) for the full breakdown
-- **Considered, not planned:** `csparc2star`/pyem-style particle-metadata conversion (a different tool category — full `.cs` particle-metadata parsing and coordinate-convention conversion — and pyem is GPL-3.0, which would require InstantMap itself to go GPL to embed it; a future thin "shell out to a separately-installed `csparc2star.py`" convenience button would sidestep the licensing issue but isn't currently planned)
-- **Possible future items:**
-  - A RELION pipeline flowchart view as an alternative to the flat lineage list.
-  - CryoSPARC job status/badges backed by `job.json` once its schema can be confirmed against real project output (still undocumented and not always present as of this writing — [CryoSPARC Guide](https://guide.cryosparc.com/) has no spec for it — so intentionally left as a filename heuristic).
-  - Optionally backing the CryoSPARC tab with [`cryosparc-tools`](https://github.com/cryoem-uoft/cryosparc-tools) — Structura Biotechnology's own official Python API for CryoSPARC (PyPI, source-available) — instead of/alongside filesystem reads. Would give real job type/status/parameters instead of filename guessing, but needs a live connection (host/port/API credentials) to the CryoSPARC master, which not every cluster setup exposes to the client machine — a bigger, separate feature, not started.
-  - SSH tab hardening: an in-app "trust this new host" prompt (showing the key fingerprint) as an alternative to requiring a manual `ssh` once from a terminal — common UX pattern in other SSH-capable tools, would need its own care to avoid weakening the current TOFU-via-`known_hosts` model.
-  - Job Tree: a "local"/sub-tree view showing only jobs within *n* hops of a selection, filter-by-connectivity (show only a job and its direct parents/children), and click-to-highlight-lineage — all real, still-unresolved feature requests from CryoSPARC's own forum for their tree view, relevant to InstantMap's once trees get large.
-
-## Before Publishing to the Toolshed
-
-Not done yet — noting this for when this bundle is ready to publish:
-- Toolshed submission requires signing in with a Google account, then using the "Submit a Bundle" link; **the first submission needs approval from ChimeraX staff**, later updates from the same account publish immediately. ([Building and Distributing Bundles](https://www.cgl.ucsf.edu/chimerax/docs/devel/writing_bundles.html))
-- The bundle is a standard wheel (already builds cleanly via `devel install .`); nothing else in `bundle_info.xml` needs to change for submission.
-
----
-
 ## Development
 
 Run the test suite (no ChimeraX installation required — the STAR/artifact/badge/directory-scan logic lives in standalone modules under `src/`):
