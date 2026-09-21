@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: >-
+  If InstantMap helped produce a figure or streamlined your workflow in your
+  paper or presentation, please cite it as below. Developed by Lukas W.
+  Bauer, with AI-assisted development by Claude (Anthropic).
+title: ChimeraX-InstantMap
+version: "1.1.0"
+date-released: "2026-08-27"
+authors:
+  - family-names: Bauer
+    given-names: Lukas W.
+license: MIT
+repository-code: "https://github.com/LUKASinScience/ChimeraX-InstantMap"
+type: software

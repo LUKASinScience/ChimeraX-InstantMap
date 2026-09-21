@@ -3,6 +3,162 @@
 All notable changes to InstantMap are documented here. Versions follow the
 `bundle_info.xml` `version` attribute.
 
+## [1.2.0] - 2026-09-09
+
+### Added
+- **Command-line access**: RELION job trees/tables/methods drafts can now be
+  built without opening the GUI at all — `instantmap tree|table|methods` on
+  ChimeraX's own command line (also works with `chimerax --nogui --cmd`),
+  and `relion_cli.py` as a plain stdlib-only Python 3 script runnable from
+  any terminal, no ChimeraX or Qt install required. See
+  [docs/cli.md](docs/cli.md).
+- **Scrolling affordance fixes**: every tab's scrollbar is now forced
+  always-visible with a styled track+thumb, instead of the platform
+  default — macOS in particular uses an overlay scrollbar that's invisible
+  at rest and only flashes in while actively scrolling, giving no
+  indication a tab has more content below. On the RELION History tab's two
+  sub-tabs specifically, the core action buttons (Open Job Map/Half Maps,
+  Export Table…, Show Job Tree, Copy Methods Draft…) and the status label
+  are now a fixed footer outside the scrollable area, so they're always
+  reachable without having to discover — or even need — scrolling.
+- **SSH tab's Remote Files panel no longer forces 220px** regardless of
+  content: the file tree used a fixed height (taller than the 180px/260px
+  used elsewhere), which stopped the panel from shrinking even when empty.
+  It's now a minimum of 120px, so it can compress when the user wants a
+  compact panel and still grow to use available space when browsing.
+- **Path highlighting** in **Browse Project Tree**: the currently-loaded
+  job's ancestry chain is drawn thicker and in an accent color among the
+  full project graph, so it's clear at a glance which branch fed into it
+  alongside any abandoned/unrelated jobs.
+- **Local ("N hops") view** for the Job Tree: a **"Local view — show only
+  N hops upstream"** checkbox + spin box on the Job Tree sub-tab limits the
+  diagram to jobs within N upstream steps of the selected job, instead of
+  always the full lineage — useful once a project's history gets long.
+  Unchecked by default (full lineage); the spin box is only enabled once
+  the checkbox is on, so there's no ambiguous "0 hops" state. New pure
+  `relion_pipeline.limit_hops()`.
+- **Session-persistent manual contour levels**: a level set for a
+  map in "Adjust map levels manually" mode is remembered (keyed by file
+  path) and pre-fills that map's slider the next time the Job Tree is
+  shown, instead of resetting to ChimeraX's auto-picked level every time.
+- **"Copy Methods Draft…"** (Job Tree sub-tab): assembles a short,
+  editable per-job text draft from the lineage's own recorded parameters
+  (symmetry, particle diameter, class count, from each job's `job.star`)
+  and stats (resolution, particle count) — a starting point for a methods
+  section, not a finished paragraph. New pure `relion_methods.py`.
+- **"Export Table…"** (History sub-tab): exports the loaded lineage as a
+  CSV or Markdown table (job, type, state, parent(s), resolution, particle
+  count), independent of the Job Tree diagram. New pure `relion_export.py`.
+- **Resolution/particle-count caption** in each Job Tree card's header,
+  under the job name ("22.9 Å · 2,150 particles") — read from RELION's own
+  files: a PostProcess job's `postprocess.star` (`_rlnFinalResolution`,
+  preferred when present) or a Class3D/Refine3D job's own `*_model.star`
+  (`_rlnCurrentResolution` as a fallback, `_rlnGroupNrParticles` summed for
+  the count). New pure `relion_artifacts.job_stats()`.
+- **Masks get an explicit level 0.5** (in addition to the mesh style) —
+  RELION masks are normalized 0-1 with a soft edge around 0.5, and the
+  auto-picked level otherwise made the mesh nearly invisible or a solid
+  blob.
+- **Thumbnail caching**: re-opening the Job Tree (e.g. just to try a
+  different export format) reuses already-rendered automatic-level
+  thumbnails instead of re-rendering every map from scratch, keyed by the
+  map file's path and modification time — cache lives on the tool instance
+  and persists across dialogs for the session. Skipped when manual levels
+  are on, since the level is chosen interactively each time.
+- **Cancel button** in the thumbnail-rendering progress dialog — stops
+  after the current map and shows the tree with whatever was rendered so
+  far, instead of forcing a wait through every remaining class.
+- **Job picker redesign** (RELION History tab): the Family/Job dropdown +
+  "Load history" button are gone. Instead, a single filterable, newest-first
+  job list (RELION numbers jobs globally, so sorting by job number is a
+  correct recency order) — clicking a row loads its history immediately,
+  and the newest job in the project **auto-loads with zero clicks** when you
+  set the directory. A **Browse Project Tree** button opens the same tree
+  diagram over the *entire* project graph (no thumbnails, fast) — click any
+  job card to select it, CryoSPARC-style. New pure
+  `relion_pipeline.sort_by_job_number()`.
+- **Manual contour levels, with a live preview**: an **"Adjust map levels
+  manually"** checkbox — when on, each map is shown with a slider + spin box
+  (synced, range from the volume's own min/max surface level) *and a live
+  preview rendered right inside the same small dialog* (debounced, updates
+  as you drag) — no need to go find ChimeraX's own graphics window to see
+  the effect. **Skip this map** excludes it entirely. Fixes masks and other
+  volumes that render solid black at ChimeraX's automatic level.
+- **RELION History tab split into sub-tabs** ("History" / "Job Tree") — the
+  day-to-day browsing controls (project dir, job picker, lineage list, Open
+  Job Map/Half Maps) no longer share space with the figure-export-focused
+  Job Tree controls (Select All/None, manual levels, Show Job Tree).
+- **"Adjust map levels manually" is now on by default** (still a checkbox,
+  so it can be turned off for the fast/automatic path).
+- **Selected-class indicator**: within a job's thumbnail grid (a Class3D
+  job with several classes), the specific class a *downstream* job actually
+  used as its input gets a **dashed border** around just that one
+  thumbnail — so it's clear which single class was carried forward rather
+  than the whole card. Two RELION mechanisms detected, confirmed against a
+  real project: a "Select classes" (Subset selection) job's
+  `backup_selection.star` — which records **no filenames at all**, only a
+  positional list of `_rlnSelected` 0/1 flags matched up here against the
+  upstream classes by class-number order — and a job that names one class
+  directly as its own reference (e.g. a Refine3D job's `job.star` "fn_ref"),
+  via a text search across the job's own small option files. Excludes large
+  per-particle tables (`particles.star`) and pipeline-snapshot files
+  (`job_pipeline.star`/`default_pipeline.star`, which list *every* upstream
+  class as a node regardless of selection and would otherwise mark all of
+  them). RELION doesn't record per-class selection in `default_pipeline.star`
+  itself (edges there are per-job, not per-file-within-a-job). New pure
+  `relion_artifacts.referenced_class_maps()`.
+- **Masks rendered as a mesh**: a job's thumbnail is shown with `volume
+  ... style mesh` instead of a solid surface when its filename matches
+  RELION's mask naming convention (the same heuristic already used for the
+  mask badge) — a solid binary mask is otherwise just a flat blob with no
+  visible internal shape.
+- **Job Tree card styling**: rounded card corners (matching the header strip
+  to the card body), orthogonal (horizontal/vertical only, single-elbow)
+  connector lines instead of diagonals, and maps rendered with a
+  transparent background (`save ... transparentBackground true`) so a
+  card's white body shows through instead of ChimeraX's default black —
+  both the thumbnail grid and the manual-level preview.
+- **Job Tree layout redesign**: left-aligned, content-aware positioning —
+  a simple chain of jobs now forms a straight left-hand column (only actual
+  branch points indent rightward, git-log-graph style) and row spacing is
+  based on each generation's *actual* tallest card instead of a fixed gap,
+  closing up the large empty space text-only rows used to leave.
+  `relion_tree_layout.layout_positions()` now takes real card sizes and
+  does this positioning itself (previously a fixed, content-blind grid).
+- **Job Tree diagram** (RELION History tab): click **Show Job Tree** to open
+  a popup with a **top-to-bottom** card diagram of the full upstream
+  lineage, styled after CryoSPARC's own tree/card views — every job is a
+  card with a family-colored header (job number/type + a state dot:
+  succeeded/failed/running/aborted/unknown), and jobs with a map show it as
+  a thumbnail (or a **grid of thumbnails** for a Class3D job with multiple
+  classes — each class rendered separately, latest iteration only).
+  Thumbnails are rendered **one map at a time** (open → snapshot → close
+  before the next), so peak memory never exceeds a single map regardless of
+  how many jobs/classes are included. Every job with a map is **included by
+  default** (checkboxes let you opt individual ones out; **Select All** /
+  **Select None** for bulk toggling; jobs without a map are shown disabled).
+  Exportable as **PNG**, **PDF**, or **SVG** — the vector formats keep
+  cards/lines/text as separate, editable objects in Illustrator (or
+  Inkscape), with thumbnails embedded as raster images inside.
+- New pure module `src/relion_tree_layout.py` (`layout_positions`) —
+  generation-based 2D layout (top-to-bottom), unit tested like the rest of
+  the RELION pipeline logic.
+- New `relion_artifacts.list_class_maps()` — enumerates every class volume
+  in a Class3D-style job directory, keeping only the latest RELION
+  iteration per class.
+
+### Notes
+- SVG export needed one workaround: this project's Qt compatibility shim
+  doesn't expose `QtSvg`, so `JobTreeDialog` detects the active Qt binding
+  (PyQt6 here) via `QObject.__module__` and imports `QtSvg` from it
+  directly — confirmed to work the same way PyQt5/PySide2/PySide6 all ship
+  a `QtSvg` module.
+- Design informed directly by reading CryoSPARC's own docs (Job Views:
+  Cards/Tree/Table, Job Relationships) and several of their forum threads
+  on tree-view usability — local/sub-tree views, filter-by-connectivity, and
+  click-to-highlight-lineage are real ideas from there but out of scope for
+  this pass; noted in the README Roadmap as future items.
+
 ## [1.1.0] - 2026-08-27 — Initial public release
 
 The full feature set as of the first public release (everything below was

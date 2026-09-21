@@ -1,4 +1,5 @@
 import os
+from collections import defaultdict
 
 from chimerax.core.tools import ToolInstance
 
@@ -17,7 +18,6 @@ from Qt.QtWidgets import (
     QWidget,
     QScrollArea,
     QTabWidget,
-    QComboBox,
     QApplication,
 )
 from Qt.QtCore import QTimer, Qt, QSize
@@ -26,16 +26,49 @@ from Qt.QtGui import QFont, QColor
 from .browser_panel import DirectoryBrowserPanel
 from .ssh_browser_panel import SSHBrowserPanel
 from .cryosparc_badges import cryosparc_badge
-from .relion_artifacts import scan_job_artifacts, artifact_badge
+from .relion_artifacts import (
+    scan_job_artifacts, artifact_badge, list_class_maps, referenced_class_maps,
+    job_stats as relion_job_stats, parse_job_options,
+)
 from .relion_pipeline import (
     load_pipeline,
     build_parents as pipeline_build_parents,
     upstream as pipeline_upstream,
+    limit_hops,
     layers as pipeline_layers,
+    sort_by_job_number,
 )
+from .relion_methods import draft_methods_paragraph
+from .relion_export import history_rows, rows_to_csv, rows_to_markdown
 
 MAP_EXTENSIONS = (".mrc", ".mrcs", ".mrc.gz", ".map", ".map.gz")
 CRYOSPARC_EXTENSIONS = (".mrc", ".mrcs", ".mrc.gz", ".map", ".map.gz", ".bild")
+
+# A visible always-on track+thumb instead of the platform default (macOS in
+# particular uses an overlay scrollbar that's invisible at rest and only
+# flashes in while actively scrolling) — so there's a persistent visual cue
+# that a tab has more content below, not just a panel that stops abruptly.
+_SCROLLBAR_STYLE = """
+QScrollBar:vertical {
+    background: transparent;
+    width: 14px;
+    margin: 0px;
+}
+QScrollBar::handle:vertical {
+    background: rgba(128, 128, 128, 150);
+    min-height: 24px;
+    border-radius: 6px;
+}
+QScrollBar::handle:vertical:hover {
+    background: rgba(100, 100, 100, 190);
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
+}
+"""
 
 
 class _InitialHeightTabWidget(QTabWidget):
@@ -64,6 +97,9 @@ class InstantMapTool(ToolInstance):
         self.display_name = "InstantMap"
         self._opened_files = set()
         self._relion_job_artifacts = {}
+        self._relion_job_dirs = {}
+        self._relion_thumbnail_cache = {}
+        self._relion_level_cache = {}
 
         from chimerax.ui import MainToolWindow
         self.tool_window = MainToolWindow(self)
@@ -91,8 +127,7 @@ class InstantMapTool(ToolInstance):
             "cryosparc_auto_refresh": self._cryosparc_auto_refresh_cb.isChecked(),
             "cryosparc_refresh_interval": self._cryosparc_interval_spin.value(),
             "relion_dir": self._relion_dir_entry.text(),
-            "relion_family": self._relion_family_combo.currentText(),
-            "relion_job": self._relion_job_combo.currentText(),
+            "relion_selected_job": getattr(self, "_relion_picked_job", "") or "",
             # SSH: non-secret connection fields only — never the passphrase,
             # and restoring a session never auto-connects (see
             # set_state_from_snapshot).
@@ -137,16 +172,9 @@ class InstantMapTool(ToolInstance):
         if state.get("relion_dir"):
             self._relion_dir_entry.setText(state["relion_dir"])
             try:
-                self._populate_relion_families(state["relion_dir"])
-                if state.get("relion_family"):
-                    idx = self._relion_family_combo.findText(state["relion_family"])
-                    if idx >= 0:
-                        self._relion_family_combo.setCurrentIndex(idx)
-                if state.get("relion_job"):
-                    idx = self._relion_job_combo.findText(state["relion_job"])
-                    if idx >= 0:
-                        self._relion_job_combo.setCurrentIndex(idx)
-                self._load_relion_history()
+                self._populate_relion_job_picker(state["relion_dir"])
+                if state.get("relion_selected_job"):
+                    self._on_relion_job_picked(state["relion_selected_job"])
             except Exception as exc:
                 self.session.logger.warning(
                     "InstantMap: could not restore RELION state: %s" % exc
@@ -166,9 +194,22 @@ class InstantMapTool(ToolInstance):
         outer_layout.addWidget(self._tabs)
 
         self._tabs.addTab(self._build_browser_tab(), "RELION Browser")
-        self._tabs.addTab(self._make_scrollable(self._build_relion_tab()), "RELION History")
+        self._tabs.addTab(self._build_relion_tab(), "RELION History")
         self._tabs.addTab(self._make_scrollable(self._build_cryosparc_tab()), "CryoSPARC Browser")
         self._tabs.addTab(self._make_scrollable(self._build_ssh_tab()), "SSH")
+
+    def _scroll_area(self, content_widget):
+        """A vertically-scrolling QScrollArea around `content_widget`, with
+        an always-visible track+thumb (see `_SCROLLBAR_STYLE`) rather than
+        the platform default that can otherwise hide the fact there's more
+        content below."""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        scroll.setStyleSheet(_SCROLLBAR_STYLE)
+        scroll.setWidget(content_widget)
+        return scroll
 
     def _make_scrollable(self, content_widget):
         """Wrap `content_widget` in a vertically-scrolling QScrollArea so a
@@ -177,14 +218,7 @@ class InstantMapTool(ToolInstance):
         outer = QVBoxLayout()
         outer.setContentsMargins(0, 0, 0, 0)
         container.setLayout(outer)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setWidget(content_widget)
-        outer.addWidget(scroll)
-
+        outer.addWidget(self._scroll_area(content_widget))
         return container
 
     def _build_browser_tab(self):
@@ -193,16 +227,10 @@ class InstantMapTool(ToolInstance):
         browser_outer.setContentsMargins(0, 0, 0, 0)
         browser_tab.setLayout(browser_outer)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        browser_outer.addWidget(scroll)
-
         inner = QWidget()
-        scroll.setWidget(inner)
         main_layout = QVBoxLayout()
         inner.setLayout(main_layout)
+        browser_outer.addWidget(self._scroll_area(inner))
 
         # -------- MAP BROWSER --------
         self._map_panel = DirectoryBrowserPanel(
@@ -511,10 +539,30 @@ class InstantMapTool(ToolInstance):
     }
 
     def _build_relion_tab(self):
-        """Build and return the RELION Job History tab widget."""
+        """Build and return the RELION Job History tab widget: an inner
+        History/Job Tree split so day-to-day browsing (project dir, job
+        picker, lineage list) stays uncluttered by the figure-export-focused
+        Job Tree controls (Select All/None, manual levels, Show Job Tree)."""
+        outer_tab = QWidget()
+        outer_layout = QVBoxLayout()
+        outer_tab.setLayout(outer_layout)
+
+        inner_tabs = QTabWidget()
+        outer_layout.addWidget(inner_tabs)
+
         tab = QWidget()
+        tab_layout = QVBoxLayout()
+        tab.setLayout(tab_layout)
+        inner_tabs.addTab(tab, "History")
+
+        # Scrollable part: project dir, job picker, lineage list. The
+        # action buttons/status below are kept as a fixed footer outside
+        # this scroll area, so they're always reachable without having to
+        # discover that the panel scrolls.
+        history_content = QWidget()
         layout = QVBoxLayout()
-        tab.setLayout(layout)
+        history_content.setLayout(layout)
+        tab_layout.addWidget(self._scroll_area(history_content), stretch=1)
 
         # Project directory row
         proj_group = QGroupBox("RELION project directory")
@@ -532,28 +580,29 @@ class InstantMapTool(ToolInstance):
         proj_layout.addWidget(relion_browse_btn)
         layout.addWidget(proj_group)
 
-        # Family + job selector row
-        sel_layout = QHBoxLayout()
+        # Job picker: filterable, newest-first, click to select
+        picker_group = QGroupBox("Select final job")
+        picker_layout = QVBoxLayout()
+        picker_group.setLayout(picker_layout)
 
-        self._relion_family_combo = QComboBox()
-        self._relion_family_combo.setPlaceholderText("Family")
-        self._relion_family_combo.currentIndexChanged.connect(self._on_relion_family_changed)
+        filter_row = QHBoxLayout()
+        self._relion_job_filter = QLineEdit()
+        self._relion_job_filter.setPlaceholderText("Type to filter jobs...")
+        self._relion_job_filter.textChanged.connect(self._filter_relion_job_picker)
+        browse_tree_btn = QPushButton("Browse Project Tree")
+        browse_tree_btn.setToolTip("Show the whole project as a tree diagram; click a job to select it")
+        browse_tree_btn.clicked.connect(self._browse_relion_project_tree)
+        filter_row.addWidget(self._relion_job_filter, stretch=1)
+        filter_row.addWidget(browse_tree_btn)
+        picker_layout.addLayout(filter_row)
 
-        self._relion_job_combo = QComboBox()
-        self._relion_job_combo.setPlaceholderText("Job")
+        self._relion_job_picker = QListWidget()
+        self._relion_job_picker.setAlternatingRowColors(True)
+        self._relion_job_picker.setMaximumHeight(140)
+        self._relion_job_picker.itemClicked.connect(self._on_relion_picker_item_clicked)
+        picker_layout.addWidget(self._relion_job_picker)
 
-        load_btn = QPushButton("Load history")
-        load_btn.setStyleSheet(
-            "QPushButton { background-color: #2a6496; color: #ffffff;"
-            " border: 1px solid #1a4a70; border-radius: 4px; padding: 3px 10px; }"
-            "QPushButton:hover { background-color: #1a4a70; }"
-        )
-        load_btn.clicked.connect(self._load_relion_history)
-
-        sel_layout.addWidget(self._relion_family_combo, stretch=1)
-        sel_layout.addWidget(self._relion_job_combo, stretch=1)
-        sel_layout.addWidget(load_btn)
-        layout.addLayout(sel_layout)
+        layout.addWidget(picker_group)
 
         # Job list — chronological
         self._relion_job_list = QListWidget()
@@ -562,6 +611,7 @@ class InstantMapTool(ToolInstance):
         self._relion_job_list.setMinimumHeight(220)
         layout.addWidget(self._relion_job_list, stretch=1)
 
+        # -------- Fixed footer: always reachable without scrolling -------- #
         # Open shortcuts for the selected job's artifacts
         relion_open_layout = QHBoxLayout()
         open_map_btn = QPushButton("Open Job Map")
@@ -572,14 +622,105 @@ class InstantMapTool(ToolInstance):
         open_half_btn.clicked.connect(self._open_relion_half_maps)
         relion_open_layout.addWidget(open_map_btn)
         relion_open_layout.addWidget(open_half_btn)
-        layout.addLayout(relion_open_layout)
+        tab_layout.addLayout(relion_open_layout)
+
+        export_table_btn = QPushButton("Export Table…")
+        export_table_btn.setToolTip(
+            "Export the loaded lineage as a CSV or Markdown table (job, "
+            "type, state, parents, resolution, particle count) — for a "
+            "methods section or supplementary material"
+        )
+        export_table_btn.clicked.connect(self._export_relion_history_table)
+        tab_layout.addWidget(export_table_btn)
 
         # Status label
         self._relion_status_label = QLabel("No project loaded.")
         self._relion_status_label.setStyleSheet("color: grey; font-style: italic;")
-        layout.addWidget(self._relion_status_label)
+        tab_layout.addWidget(self._relion_status_label)
 
-        return tab
+        # -------- Job Tree sub-tab: figure-export-focused controls --------
+        tree_tab = QWidget()
+        tree_tab_layout = QVBoxLayout()
+        tree_tab.setLayout(tree_tab_layout)
+        inner_tabs.addTab(tree_tab, "Job Tree")
+
+        # Scrollable part: hint, select-all/none, manual levels, local
+        # view. The action buttons below are a fixed footer, per the same
+        # "always reachable" reasoning as the History sub-tab above.
+        tree_content = QWidget()
+        tree_layout = QVBoxLayout()
+        tree_content.setLayout(tree_layout)
+        tree_tab_layout.addWidget(self._scroll_area(tree_content), stretch=1)
+
+        tree_hint = QLabel(
+            "Builds a diagram of the lineage loaded in the History tab. Jobs "
+            "with a map are checked in the History list by default — uncheck "
+            "any you don't want to embed as a thumbnail."
+        )
+        tree_hint.setWordWrap(True)
+        tree_hint.setStyleSheet("color: grey; font-style: italic;")
+        tree_layout.addWidget(tree_hint)
+
+        tree_select_layout = QHBoxLayout()
+        select_all_btn = QPushButton("Select All")
+        select_all_btn.setToolTip("Include every job that has a map in the job tree")
+        select_all_btn.clicked.connect(lambda: self._set_all_relion_checks(Qt.Checked))
+        select_none_btn = QPushButton("Select None")
+        select_none_btn.clicked.connect(lambda: self._set_all_relion_checks(Qt.Unchecked))
+        tree_select_layout.addWidget(select_all_btn)
+        tree_select_layout.addWidget(select_none_btn)
+        tree_select_layout.addStretch()
+        tree_layout.addLayout(tree_select_layout)
+
+        self._relion_manual_levels_cb = QCheckBox("Adjust map levels manually")
+        self._relion_manual_levels_cb.setToolTip(
+            "Show each map (with a live preview) before rendering its "
+            "thumbnail so you can set its contour level — useful for masks, "
+            "which often render solid black at the automatic level"
+        )
+        self._relion_manual_levels_cb.setChecked(True)
+        tree_layout.addWidget(self._relion_manual_levels_cb)
+
+        local_view_layout = QHBoxLayout()
+        self._relion_local_view_cb = QCheckBox("Local view — show only")
+        self._relion_local_view_cb.setToolTip(
+            "Show only jobs within a limited number of upstream steps of "
+            "the selected job, instead of the full lineage — useful once a "
+            "tree gets large."
+        )
+        self._relion_local_view_cb.toggled.connect(self._on_relion_local_view_toggled)
+        self._relion_hop_limit_spin = QSpinBox()
+        self._relion_hop_limit_spin.setRange(1, 999)
+        self._relion_hop_limit_spin.setValue(2)
+        self._relion_hop_limit_spin.setEnabled(False)
+        self._relion_hop_limit_spin.setToolTip("Number of upstream steps (hops) from the selected job to include")
+        local_view_layout.addWidget(self._relion_local_view_cb)
+        local_view_layout.addWidget(self._relion_hop_limit_spin)
+        local_view_layout.addWidget(QLabel("hops upstream"))
+        local_view_layout.addStretch()
+        tree_layout.addLayout(local_view_layout)
+        tree_layout.addStretch()
+
+        # -------- Fixed footer: always reachable without scrolling -------- #
+        show_tree_btn = QPushButton("Show Job Tree")
+        show_tree_btn.setStyleSheet(
+            "QPushButton { background-color: #2a6496; color: #ffffff;"
+            " border: 1px solid #1a4a70; border-radius: 4px; padding: 3px 10px; }"
+            "QPushButton:hover { background-color: #1a4a70; }"
+        )
+        show_tree_btn.clicked.connect(self._show_relion_job_tree)
+        tree_tab_layout.addWidget(show_tree_btn)
+
+        methods_btn = QPushButton("Copy Methods Draft…")
+        methods_btn.setToolTip(
+            "Draft a short methods-section paragraph from the loaded "
+            "lineage's own job types, parameters, and resolution/particle "
+            "stats — a starting point to edit, not a finished sentence"
+        )
+        methods_btn.clicked.connect(self._show_relion_methods_draft)
+        tree_tab_layout.addWidget(methods_btn)
+
+        return outer_tab
 
     # ── RELION directory handling ──────────────────────────────────────── #
 
@@ -593,66 +734,21 @@ class InstantMapTool(ToolInstance):
         )
         if directory:
             self._relion_dir_entry.setText(directory)
-            self._populate_relion_families(directory)
+            self._populate_relion_job_picker(directory)
 
     def _on_relion_dir_edited(self):
         path = self._relion_dir_entry.text().strip()
         if os.path.isdir(path):
-            self._populate_relion_families(path)
+            self._populate_relion_job_picker(path)
         else:
             self.session.logger.warning("Not a valid directory: %s" % path)
 
-    def _populate_relion_families(self, project_path):
-        """Scan project dir for job families and fill the family combo."""
+    def _populate_relion_job_picker(self, project_path):
+        """Parse the pipeline once, cache it, and fill the job picker with
+        every job in the project (newest first — RELION numbers jobs
+        globally, so sorting by job number is a correct recency order)."""
         from pathlib import Path
         project = Path(project_path)
-        families = sorted([
-            d.name for d in project.iterdir()
-            if d.is_dir()
-            and any(x.is_dir() and x.name.startswith("job")
-                    for x in d.iterdir())
-        ])
-        self._relion_family_combo.clear()
-        self._relion_job_combo.clear()
-        for f in families:
-            self._relion_family_combo.addItem(f)
-        if families:
-            self._on_relion_family_changed(0)
-
-    def _on_relion_family_changed(self, _index):
-        """Fill job combo when family selection changes."""
-        from pathlib import Path
-        project_path = self._relion_dir_entry.text().strip()
-        family = self._relion_family_combo.currentText()
-        if not project_path or not family:
-            return
-        jobs = sorted([
-            d.name
-            for d in (Path(project_path) / family).iterdir()
-            if d.is_dir() and d.name.startswith("job")
-        ])
-        self._relion_job_combo.clear()
-        for j in jobs:
-            self._relion_job_combo.addItem(j)
-        # default to last job (most recent)
-        if jobs:
-            self._relion_job_combo.setCurrentIndex(len(jobs) - 1)
-
-    # ── Pipeline loading & display ─────────────────────────────────────── #
-
-    def _load_relion_history(self):
-        from pathlib import Path
-        project_path = self._relion_dir_entry.text().strip()
-        family = self._relion_family_combo.currentText()
-        job = self._relion_job_combo.currentText()
-
-        if not project_path or not family or not job:
-            self._relion_status_label.setText("Select a project directory, family and job first.")
-            return
-
-        selected = "%s/%s" % (family, job)
-        project = Path(project_path)
-
         try:
             procs, node_to_prod, proc_to_in = load_pipeline(project)
         except Exception as exc:
@@ -661,6 +757,80 @@ class InstantMapTool(ToolInstance):
             return
 
         parents = pipeline_build_parents(procs, node_to_prod, proc_to_in)
+        self._relion_pipeline_cache = (project, procs, node_to_prod, proc_to_in, parents)
+
+        ordered = sort_by_job_number(procs, reverse=True)
+        self._relion_job_filter.clear()
+        self._relion_job_picker.clear()
+        for j in ordered:
+            fam = j.split("/")[0]
+            item = QListWidgetItem(j)
+            item.setData(Qt.UserRole, j)
+            fg_hex = self._FAM_COLOR.get(fam, ("#e2e3e5", "#383d41"))[1]
+            item.setForeground(QColor(fg_hex))
+            self._relion_job_picker.addItem(item)
+
+        if ordered:
+            self._on_relion_job_picked(ordered[0])
+        else:
+            self._relion_status_label.setText("No RELION jobs found in this directory.")
+
+    def _filter_relion_job_picker(self, text):
+        text = text.lower().strip()
+        for i in range(self._relion_job_picker.count()):
+            item = self._relion_job_picker.item(i)
+            item.setHidden(bool(text) and text.lower() not in item.text().lower())
+
+    def _on_relion_picker_item_clicked(self, item):
+        self._on_relion_job_picked(item.data(Qt.UserRole))
+
+    def _on_relion_job_picked(self, job_id):
+        self._relion_picked_job = job_id
+        for i in range(self._relion_job_picker.count()):
+            if self._relion_job_picker.item(i).data(Qt.UserRole) == job_id:
+                self._relion_job_picker.setCurrentRow(i)
+                break
+        self._load_relion_history()
+
+    def _browse_relion_project_tree(self):
+        if not getattr(self, "_relion_pipeline_cache", None):
+            self.session.logger.info("InstantMap: load a RELION project directory first.")
+            return
+        _project, _procs, _node_to_prod, _proc_to_in, parents = self._relion_pipeline_cache
+        full_layers = pipeline_layers(None, parents)
+
+        # highlight the currently-loaded job's ancestry chain, so it's
+        # clear at a glance which branch fed into it among the whole
+        # project's jobs (e.g. abandoned Class3D runs alongside it)
+        highlight_jobs = set()
+        if getattr(self, "_relion_picked_job", None):
+            highlight_jobs, _ = pipeline_upstream(self._relion_picked_job, parents)
+
+        from .relion_tree_dialog import JobTreeDialog
+        self._job_tree_picker_dialog = JobTreeDialog(
+            self.session, full_layers, parents, {}, {}, self._FAM_COLOR,
+            "Browse all jobs — click one to select it",
+            parent=self.tool_window.ui_area,
+            on_job_clicked=self._on_relion_job_picked_from_tree,
+            highlight_jobs=highlight_jobs,
+        )
+        self._job_tree_picker_dialog.setAttribute(Qt.WA_DeleteOnClose)
+        self._job_tree_picker_dialog.show()
+
+    def _on_relion_job_picked_from_tree(self, job_id):
+        self._job_tree_picker_dialog.close()
+        self._on_relion_job_picked(job_id)
+
+    # ── Pipeline loading & display ─────────────────────────────────────── #
+
+    def _load_relion_history(self):
+        if not getattr(self, "_relion_pipeline_cache", None) or not getattr(self, "_relion_picked_job", None):
+            self._relion_status_label.setText("Select a project directory and a job first.")
+            return
+
+        project, procs, node_to_prod, proc_to_in, parents = self._relion_pipeline_cache
+        selected = self._relion_picked_job
+
         keep, sub = pipeline_upstream(selected, parents)
 
         if selected not in keep:
@@ -674,6 +844,7 @@ class InstantMapTool(ToolInstance):
 
         self._relion_job_list.clear()
         self._relion_job_artifacts.clear()
+        self._relion_job_dirs.clear()
         for j in ordered:
             fam = j.split("/")[0]
             jnum = j.split("/")[1] if "/" in j else j
@@ -683,12 +854,25 @@ class InstantMapTool(ToolInstance):
             job_dir = project / fam / jnum
             artifacts = scan_job_artifacts(job_dir)
             self._relion_job_artifacts[j] = artifacts
+            self._relion_job_dirs[j] = job_dir
             badge = artifact_badge(artifacts)
 
             item = QListWidgetItem()
             label = "  %s   %s   ←  %s   %s" % (jnum, fam, par_str, badge)
             item.setText(label)
             item.setData(Qt.UserRole, j)
+            has_map = bool(
+                artifacts["postprocess_map"] or artifacts["latest_map"]
+                or artifacts["mask"] or list_class_maps(job_dir)
+            )
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            if has_map:
+                item.setCheckState(Qt.Checked)
+                item.setToolTip("Uncheck to exclude this job's map from the job tree")
+            else:
+                item.setCheckState(Qt.Unchecked)
+                item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
+                item.setToolTip("No map available for this job")
 
             # highlight selected job
             if j == selected:
@@ -702,6 +886,10 @@ class InstantMapTool(ToolInstance):
             item.setForeground(QColor(fg_hex))
 
             self._relion_job_list.addItem(item)
+
+        self._relion_job_layers = ordered_layers
+        self._relion_job_parents = sub
+        self._relion_selected_job = selected
 
         self._relion_status_label.setText(
             "%d job(s) in upstream lineage of %s" % (len(ordered), selected)
@@ -726,6 +914,167 @@ class InstantMapTool(ToolInstance):
             return
         self._open_relion_path(artifacts["half_map_1"])
         self._open_relion_path(artifacts["half_map_2"])
+
+    def _set_all_relion_checks(self, check_state):
+        for i in range(self._relion_job_list.count()):
+            item = self._relion_job_list.item(i)
+            if item.flags() & Qt.ItemIsEnabled:
+                item.setCheckState(check_state)
+
+    def _on_relion_local_view_toggled(self, checked):
+        self._relion_hop_limit_spin.setEnabled(checked)
+
+    def _show_relion_job_tree(self):
+        if not getattr(self, "_relion_job_layers", None):
+            self.session.logger.info("InstantMap: load a RELION history first.")
+            return
+
+        hop_limit = self._relion_hop_limit_spin.value() if self._relion_local_view_cb.isChecked() else 0
+        if hop_limit > 0:
+            keep, job_parents = limit_hops(self._relion_selected_job, self._relion_job_parents, hop_limit)
+            job_layers = pipeline_layers(None, job_parents)
+        else:
+            keep, job_parents, job_layers = None, self._relion_job_parents, self._relion_job_layers
+
+        map_job_ids = set()
+        for i in range(self._relion_job_list.count()):
+            item = self._relion_job_list.item(i)
+            job_id = item.data(Qt.UserRole)
+            if item.checkState() == Qt.Checked and (keep is None or job_id in keep):
+                map_job_ids.add(job_id)
+
+        job_maps = {}
+        for job_id in map_job_ids:
+            job_dir = self._relion_job_dirs.get(job_id)
+            class_maps = list_class_maps(job_dir) if job_dir else []
+            if class_maps:
+                job_maps[job_id] = class_maps
+                continue
+            artifacts = self._relion_job_artifacts.get(job_id) or {}
+            single = artifacts.get("postprocess_map") or artifacts.get("latest_map") or artifacts.get("mask")
+            if single:
+                job_maps[job_id] = [single]
+
+        # for a job with several classes, mark which specific class a
+        # downstream job actually used as its input
+        children = defaultdict(set)
+        for job_id, pars in job_parents.items():
+            for par in pars:
+                children[par].add(job_id)
+
+        selected_map_paths = {}
+        for job_id, paths in job_maps.items():
+            if len(paths) <= 1:
+                continue
+            job_dir = self._relion_job_dirs.get(job_id)
+            if not job_dir:
+                continue
+            referenced = set()
+            for child_id in children.get(job_id, ()):
+                child_dir = self._relion_job_dirs.get(child_id)
+                if child_dir:
+                    referenced |= referenced_class_maps(child_dir, paths)
+            if referenced:
+                selected_map_paths[job_id] = referenced
+
+        job_stats = {
+            job_id: relion_job_stats(job_dir)
+            for job_id, job_dir in self._relion_job_dirs.items()
+            if job_dir is not None and (keep is None or job_id in keep)
+        }
+        job_artifacts = self._relion_job_artifacts if keep is None else {
+            job_id: a for job_id, a in self._relion_job_artifacts.items() if job_id in keep
+        }
+
+        from .relion_tree_dialog import JobTreeDialog
+        self._job_tree_dialog = JobTreeDialog(
+            self.session,
+            job_layers,
+            job_parents,
+            job_artifacts,
+            job_maps,
+            self._FAM_COLOR,
+            self._relion_selected_job,
+            parent=self.tool_window.ui_area,
+            manual_levels=self._relion_manual_levels_cb.isChecked(),
+            selected_map_paths=selected_map_paths,
+            job_stats=job_stats,
+            thumbnail_cache=self._relion_thumbnail_cache,
+            level_cache=self._relion_level_cache,
+        )
+        self._job_tree_dialog.setAttribute(Qt.WA_DeleteOnClose)
+        self._job_tree_dialog.show()
+
+    def _show_relion_methods_draft(self):
+        if not getattr(self, "_relion_job_layers", None):
+            self.session.logger.info("InstantMap: load a RELION history first.")
+            return
+
+        ordered_jobs = [job for layer in self._relion_job_layers for job in layer]
+        job_options = {
+            job_id: parse_job_options(job_dir)
+            for job_id, job_dir in self._relion_job_dirs.items() if job_dir is not None
+        }
+        job_stats = {
+            job_id: relion_job_stats(job_dir)
+            for job_id, job_dir in self._relion_job_dirs.items() if job_dir is not None
+        }
+        draft = draft_methods_paragraph(ordered_jobs, job_options, job_stats)
+
+        from Qt.QtWidgets import QDialog, QPlainTextEdit
+        dialog = QDialog(self.tool_window.ui_area)
+        dialog.setWindowTitle("InstantMap — Methods Draft")
+        dialog.resize(520, 320)
+        layout = QVBoxLayout()
+        dialog.setLayout(layout)
+        layout.addWidget(QLabel(
+            "One line per job, from its own recorded parameters and stats — "
+            "a starting point to edit, not a finished paragraph:"
+        ))
+        text_edit = QPlainTextEdit(draft)
+        layout.addWidget(text_edit)
+        btn_row = QHBoxLayout()
+        copy_btn = QPushButton("Copy to Clipboard")
+        copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(text_edit.toPlainText()))
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.close)
+        btn_row.addWidget(copy_btn)
+        btn_row.addStretch()
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+        dialog.setAttribute(Qt.WA_DeleteOnClose)
+        dialog.show()
+        self._methods_draft_dialog = dialog
+
+    def _export_relion_history_table(self):
+        if not getattr(self, "_relion_job_layers", None):
+            self.session.logger.info("InstantMap: load a RELION history first.")
+            return
+
+        from Qt.QtWidgets import QFileDialog
+        path, chosen_filter = QFileDialog.getSaveFileName(
+            self.tool_window.ui_area, "Export History Table",
+            "relion_history.csv", "CSV (*.csv);;Markdown (*.md)",
+        )
+        if not path:
+            return
+
+        ordered_jobs = [job for layer in self._relion_job_layers for job in layer]
+        job_stats = {
+            job_id: relion_job_stats(job_dir)
+            for job_id, job_dir in self._relion_job_dirs.items() if job_dir is not None
+        }
+        rows = history_rows(ordered_jobs, self._relion_job_artifacts, self._relion_job_parents, job_stats)
+
+        is_markdown = "Markdown" in chosen_filter or path.lower().endswith(".md")
+        text = rows_to_markdown(rows) if is_markdown else rows_to_csv(rows)
+        try:
+            with open(path, "w", encoding="utf-8", newline="") as f:
+                f.write(text)
+        except OSError as exc:
+            self.session.logger.warning("InstantMap: could not write %s: %s" % (path, exc))
+            return
+        self.session.logger.info("InstantMap: wrote history table to %s" % path)
 
     def _selected_relion_job_artifacts(self):
         item = self._relion_job_list.currentItem()
