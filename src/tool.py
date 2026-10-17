@@ -314,8 +314,12 @@ class InstantMapTool(ToolInstance):
         mask_refresh_btn.clicked.connect(self._mask_panel.refresh)
         mask_open_btn = QPushButton("Open Selected Mask")
         mask_open_btn.clicked.connect(self._mask_panel.open_selected)
+        mask_make_btn = QPushButton("Create Mask from Map...")
+        mask_make_btn.setToolTip("Make a RELION-style soft mask from an open map (low-pass, threshold, extend, soft edge)")
+        mask_make_btn.clicked.connect(self._open_mask_dialog)
         mask_btn_layout.addWidget(mask_refresh_btn)
         mask_btn_layout.addWidget(mask_open_btn)
+        mask_btn_layout.addWidget(mask_make_btn)
         mask_section_layout.addLayout(mask_btn_layout)
 
         main_layout.addWidget(self._mask_section)
@@ -324,6 +328,12 @@ class InstantMapTool(ToolInstance):
         main_layout.addStretch()
 
         return browser_tab
+
+    def _open_mask_dialog(self):
+        from .mask_dialog import MaskDialog
+        dialog = MaskDialog(self.session, self.tool_window.ui_area, default_dir=self._mask_panel.current_directory or "")
+        self._mask_dialog = dialog          # keep a reference; the dialog is non-modal so the map can be adjusted meanwhile
+        dialog.show()
 
     def _build_cryosparc_tab(self):
         tab = QWidget()

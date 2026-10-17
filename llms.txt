@@ -1,0 +1,4 @@
+# InstantMap
+> ChimeraX bundle: RELION job lineage tree/table/methods and RELION-style masks.
+- [SKILL.md](SKILL.md): commands and limits
+- [docs/cli.md](docs/cli.md): command reference

@@ -6,15 +6,16 @@ will be displayed without the ChimeraX- prefix.
 -->
 
 <BundleInfo name="ChimeraX-InstantMap"
-    version="1.2.0"
+    version="1.3.0"
     package="chimerax.instant_map"
-    minSessionVersion="1" maxSessionVersion="1">
+    minSessionVersion="1" maxSessionVersion="1"
+    customInit="true">
 
   <Author>Lukas W. Bauer (AI-assisted development by Claude, Anthropic)</Author>
   <Email>lukasinscience@gmail.com</Email>
   <URL>https://github.com/LUKASinScience/ChimeraX-InstantMap</URL>
   <Synopsis>Auto-refreshing MRC/MAP/CryoSPARC file browser for Cryo-EM SPA and Cryo-ET STA workflows.</Synopsis>
-  <Description>A tool for browsing a directory for .mrc and .map files with automatic refresh, including a dedicated browser for CryoSPARC project/job output directories (volumes, half-maps, masks, .bild files) and a RELION Job History tab with per-job state/artifact detection. Built by Lukas W. Bauer with Claude (Anthropic) as AI copilot.</Description>
+  <Description>A tool for browsing a directory for .mrc and .map files with automatic refresh, including a dedicated browser for CryoSPARC project/job output directories (volumes, half-maps, masks, .bild files), SSH/SFTP browsing of remote projects, and a RELION Job History tab with per-job state/artifact detection, a job-tree figure and a methods draft. It also makes RELION-style soft masks from maps (instantmap mask), builds job trees and tables headlessly with optional JSON output (instantmap tree|table|methods), and lets the reliontree browser view open maps in this ChimeraX (instantmap listen). Built by Lukas W. Bauer with Claude (Anthropic) as AI copilot.</Description>
   <License>MIT</License>
 
   <Categories>
@@ -44,6 +45,9 @@ will be displayed without the ChimeraX- prefix.
     <ChimeraXClassifier>ChimeraX :: Command :: instantmap tree :: Volume Data :: Build a RELION job lineage tree from the command line</ChimeraXClassifier>
     <ChimeraXClassifier>ChimeraX :: Command :: instantmap table :: Volume Data :: Build a RELION job lineage table (CSV/Markdown) from the command line</ChimeraXClassifier>
     <ChimeraXClassifier>ChimeraX :: Command :: instantmap methods :: Volume Data :: Draft a methods-section paragraph from a RELION job lineage</ChimeraXClassifier>
+    <ChimeraXClassifier>ChimeraX :: Command :: instantmap listen :: Volume Data :: Let reliontree open maps in this ChimeraX (private file queue, no network port)</ChimeraXClassifier>
+    <ChimeraXClassifier>ChimeraX :: Command :: instantmap hint :: Volume Data :: Show or hide the reliontree tip printed at startup</ChimeraXClassifier>
+    <ChimeraXClassifier>ChimeraX :: Command :: instantmap mask :: Volume Data :: Make a RELION-style soft mask from a map (low-pass, threshold, extend, soft edge)</ChimeraXClassifier>
   </Classifiers>
 
 </BundleInfo>

@@ -85,9 +85,34 @@ def scan_remote_directory(sftp, directory, extensions, show_folders, opened_file
 
 
 def download_file(sftp, remote_path, local_path):
-    """Fetch `remote_path` to `local_path` via SFTP, creating parent dirs."""
+    """Fetch `remote_path` to `local_path` via SFTP, creating parent dirs. Returns True if it downloaded, False if the
+    cached copy was still good.
+
+    A copy counts as good when its size equals the remote size and it is at least as new as the remote file (the local
+    mtime is set to the remote one after a download, so this compares like with like). The transfer goes to a temporary
+    `.part` file that is size-checked and then moved into place, so an interrupted download never leaves a half-written
+    file that looks like a real map, and a failed refresh never destroys an earlier good copy."""
+    remote = sftp.stat(remote_path)
+    try:
+        local = os.stat(local_path)
+        if local.st_size == remote.st_size and local.st_mtime >= remote.st_mtime:
+            return False
+    except OSError:
+        pass
     os.makedirs(os.path.dirname(local_path), exist_ok=True)
-    sftp.get(remote_path, local_path)
+    partial = "%s.part-%d" % (local_path, os.getpid())
+    try:
+        sftp.get(remote_path, partial)
+        if os.path.getsize(partial) != remote.st_size:
+            raise IOError("incomplete download: got %d of %d bytes" % (os.path.getsize(partial), remote.st_size))
+        os.utime(partial, (remote.st_mtime, remote.st_mtime))
+        os.replace(partial, local_path)
+    finally:
+        try:
+            os.unlink(partial)
+        except OSError:
+            pass
+    return True
 
 
 def local_cache_path(cache_root, host, remote_path):

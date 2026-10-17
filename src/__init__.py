@@ -6,6 +6,12 @@ class _InstantMapAPI(BundleAPI):
     api_version = 1
 
     @staticmethod
+    def initialize(session, bi):
+        if session.ui.is_gui:
+            from . import hint
+            hint.show(session)
+
+    @staticmethod
     def start_tool(session, bi, ti):
         if ti.name == "InstantMap":
             from .tool import InstantMapTool

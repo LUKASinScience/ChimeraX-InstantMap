@@ -39,3 +39,28 @@ instantmap methods /path/to/relion/project
 ```
 
 Without `save`, output goes to the ChimeraX Log.
+
+Add `jsonFile <path>` to `tree`, `table` or `methods` to also write the result as a JSON file
+(`{"schema": "instantmap/1", "version", "command", "ok", ...}` with `jobs`, `rows` or `text`) for scripts and AI assistants.
+
+## Make a RELION-style mask from a map
+
+```
+instantmap mask #1 threshold 0.02 extend 3 softEdge 3 lowpass 40 output mask.mrc
+```
+
+Low-pass filter (Angstrom), threshold, grow by `extend` pixels and add a cosine soft edge of `softEdge` pixels, on the same
+grid as the map. The result is a new map model; `output` also saves it as `.mrc`. The rules were checked against real
+`relion_mask_create` output (identical voxel values). The same is available in the tool as **Create Mask from Map...**.
+
+## Open maps from reliontree
+
+```
+instantmap listen          # let reliontree's 3D buttons open maps in this window
+instantmap listen false    # stop listening
+instantmap hint false      # hide the one-line reliontree tip shown at startup (true shows it again)
+```
+
+[reliontree](https://lukasinscience.github.io/reliontree/) is the browser view of a RELION project. `listen` polls a private
+folder (`~/.reliontree/chimerax`, owner-only), opens only existing `.mrc`/`.map`/`.bild` files that you own and runs nothing
+else; no network port is opened. reliontree can also start ChimeraX with its own listener, so InstantMap is optional for that.

@@ -19,11 +19,13 @@ InstantMap was built to streamline the everyday file management that comes with 
 
 See also **[reliontree](https://github.com/LUKASinScience/reliontree)** (guide:
 [lukasinscience.github.io/reliontree](https://lukasinscience.github.io/reliontree/)), a companion tool
-for RELION job-lineage visualization.
+for RELION job-lineage visualization. Run `instantmap listen` in ChimeraX and the **3D** buttons in reliontree's
+browser view open class maps, half maps, masks and angular distributions in this one ChimeraX window
+(no network port is opened; see the [release notes](https://github.com/LUKASinScience/ChimeraX-InstantMap/releases)).
 
-#### Version 1.1.0: Initial Public Release
+#### Version 1.3.0
 
-InstantMap browses Map, Mask, CryoSPARC, and RELION-project directories (local or over SSH/SFTP to a remote cluster), with auto-refresh, RELION job-history/lineage tracking, session save/restore, and a one-click toolbar button. See [CHANGELOG.md](CHANGELOG.md) for the detailed development history that led up to this release.
+InstantMap browses Map, Mask, CryoSPARC, and RELION-project directories (local or over SSH/SFTP to a remote cluster), with auto-refresh, RELION job-history/lineage tracking, session save/restore, and a one-click toolbar button. See the [releases](https://github.com/LUKASinScience/ChimeraX-InstantMap/releases) for the version history that led up to this release.
 
 ---
 
@@ -115,6 +117,7 @@ toolshed install /path/to/ChimeraX_InstantMap-<version>-py3-none-any.whl
 - Navigate to the mask directory (e.g. `Masks/` or a classification output subfolder)
 - Use the same navigation controls as the map browser
 - Click **Open Selected Mask** or double-click to load a mask into ChimeraX
+- Click **Create Mask from Map...** to make a RELION-style soft mask from an open map: pick the map, the threshold (starts at its contour level), an optional low-pass in Å, `extend` and `soft edge` in voxels, and optionally a file to save. The same from the command line: `instantmap mask #1 threshold 0.0321 extend 3 softEdge 3 lowpass 40 output mask.mrc`. The steps are those of `relion_mask_create` (low-pass, threshold, grow by every voxel closer than `extend`, cosine edge); on two real MaskCreate jobs the result equals RELION's mask voxel for voxel. The mask has exactly the grid of the map and can be used as an external mask in RELION. Negative `extend` (shrinking) is implemented as the mirror image and not checked against RELION.
 
 ### Auto-refresh
 - The map list refreshes automatically every 60 seconds while the tool is open
@@ -192,7 +195,7 @@ The plugin icon was generated with **Gemini** (Google).
 
 ## Acknowledgments
 
-Looking at [`m2selfA/CryoRemote`](https://github.com/m2selfA/CryoRemote)'s approach to RELION STAR-table parsing and per-job artifact/state detection inspired the shlex-based STAR parser fix and the job state/artifact badges (see CHANGELOG's "Internal iteration 3"). No code was copied — InstantMap's implementation is independently written — but the idea traces back to their `src/relion.py`.
+Looking at [`m2selfA/CryoRemote`](https://github.com/m2selfA/CryoRemote)'s approach to RELION STAR-table parsing and per-job artifact/state detection inspired the shlex-based STAR parser fix and the job state/artifact badges (development iteration 3). No code was copied — InstantMap's implementation is independently written — but the idea traces back to their `src/relion.py`.
 
 ---
 
@@ -200,7 +203,7 @@ Looking at [`m2selfA/CryoRemote`](https://github.com/m2selfA/CryoRemote)'s appro
 
 InstantMap is released under the [MIT License](LICENSE).
 
-See [CHANGELOG.md](CHANGELOG.md) for the version history.
+See the [releases](https://github.com/LUKASinScience/ChimeraX-InstantMap/releases) for the version history.
 
 ---
 

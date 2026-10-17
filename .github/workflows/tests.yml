@@ -1,0 +1,21 @@
+name: tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      # the tests run on the pure-Python parts, without ChimeraX (ChimeraX 1.11 ships Python 3.11)
+      - run: python -m pip install pytest numpy scipy
+      - run: python -m pytest tests -q

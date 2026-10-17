@@ -439,9 +439,10 @@ class SSHBrowserPanel(QWidget):
         host = self._host_entry.text().strip()
         cache_root = self._cache_entry.text().strip() or os.path.expanduser("~/.instant_map_cache")
         local_path = local_cache_path(cache_root, host, remote_path)
-        self.session.logger.info("Downloading %s → %s" % (remote_path, local_path))
+        self.session.logger.info("Fetching %s → %s" % (remote_path, local_path))
         try:
-            download_file(self._sftp, remote_path, local_path)
+            if not download_file(self._sftp, remote_path, local_path):
+                self.session.logger.info("InstantMap SSH: cached copy is up to date, not downloading again")
         except Exception as exc:
             self.session.logger.warning("InstantMap SSH: download failed for %s: %s" % (remote_path, exc))
             return

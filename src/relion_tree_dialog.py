@@ -227,16 +227,18 @@ class _LevelPickerDialog(QDialog):
         for m in self._models:
             try:
                 run(self._session, "volume %s level %g" % (m.atomspec, value))
-            except Exception:
-                pass
+            except Exception as exc:
+                if not getattr(self, "_level_error_logged", False):   # once per dialog, not once per slider tick
+                    self._level_error_logged = True
+                    self._session.logger.warning("InstantMap: could not set the map level on %s: %s" % (m.name, exc))
         self._preview_timer.start()  # (re)start the debounce — coalesces rapid slider drags
 
     def _refresh_preview(self):
         if not self._viewed_once:
             try:
                 run(self._session, "view")
-            except Exception:
-                pass
+            except Exception as exc:
+                self._session.logger.info("InstantMap: could not reset the view for the level preview: %s" % exc)
             self._viewed_once = True
 
         fd, tmp_png = tempfile.mkstemp(suffix=".png", prefix="instantmap_level_preview_")
@@ -461,8 +463,8 @@ class JobTreeDialog(QDialog):
             for m, was_shown in prior_display.items():
                 try:
                     m.display = was_shown
-                except Exception:
-                    pass
+                except Exception as exc:
+                    self._session.logger.warning("InstantMap: could not restore the display state of %s: %s" % (m.name, exc))
 
         return thumbnails
 

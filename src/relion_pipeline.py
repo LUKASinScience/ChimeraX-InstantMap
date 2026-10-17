@@ -1,6 +1,7 @@
 import re
 import shlex
 from collections import defaultdict, deque
+import logging
 from pathlib import Path
 
 
@@ -47,7 +48,10 @@ def load_pipeline(project):
     def read(p):
         try:
             return Path(p).read_text(encoding="utf-8", errors="ignore")
-        except Exception:
+        except OSError as exc:
+            # a missing per-job star file is normal; an existing but unreadable one would silently drop jobs from the lineage
+            if Path(p).exists():
+                logging.getLogger(__name__).warning("could not read %s: %s", p, exc)
             return ""
 
     procs = set()
